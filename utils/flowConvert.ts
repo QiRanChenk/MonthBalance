@@ -52,19 +52,41 @@ export function alipayConvert(
 ): Flow {
   const flow: Flow | any = {};
   flow.day = row[indexMap["交易时间"]];
-  flow.flowType = String(row[indexMap["收/支"]]);
-  // + '' 防止数据不是字符串导致报错
-  flow.industryType = typeConvert(row[indexMap["交易分类"]]);
+  flow.flowType = cell(row, indexMap, "收/支");
+  flow.industryType = typeConvert(cell(row, indexMap, "交易分类"));
   flow.payType = "支付宝";
-  flow.money = row[indexMap["金额"]];
-  flow.name = String(row[indexMap["交易对方"]]);
-  flow.description =
-    row[indexMap["商品说明"]] +
-    "-" +
-    row[indexMap["收/付款方式"]] +
-    "-" +
-    row[indexMap["备注"]];
+  flow.money = parseMoney(row[indexMap["金额"]]);
+  flow.name = cell(row, indexMap, "交易对方");
+  // 只拼接非空字段，避免出现 "xxx--" 或 "undefined"
+  flow.description = [
+    cell(row, indexMap, "商品说明"),
+    cell(row, indexMap, "收/付款方式"),
+    cell(row, indexMap, "备注"),
+  ]
+    .filter((s) => s && s !== "/")
+    .join("-");
   return flow;
+}
+
+/**
+ * 金额统一解析：兼容数字（新版微信 xlsx）与 "¥12.34"/"12.34" 字符串（旧版 csv）
+ */
+export function parseMoney(value: any): number {
+  if (typeof value === "number") return value;
+  const n = parseFloat(
+    String(value ?? "")
+      .replace(/[¥￥,]/g, "")
+      .trim()
+  );
+  return Number.isNaN(n) ? 0 : n;
+}
+
+/** 取列值并转字符串，列不存在或为空时返回空串，避免拼出 "undefined" */
+function cell(row: any[], indexMap: Record<string, number>, key: string): string {
+  const idx = indexMap[key];
+  if (idx === undefined) return "";
+  const v = row[idx];
+  return v === undefined || v === null ? "" : String(v).trim();
 }
 
 export function typeConvert(type: any): string {
@@ -85,18 +107,23 @@ export function wxpayConvert(
 ): Flow {
   const flow: Flow | any = {};
   flow.day = row[indexMap["交易时间"]];
-  flow.flowType =
-    row[indexMap["收/支"]] == "/" ? "不计收支" : row[indexMap["收/支"]];
-  flow.industryType = String(typeConvert(row[indexMap["交易类型"]]));
+  const inOut = cell(row, indexMap, "收/支");
+  flow.flowType = inOut === "/" || inOut === "" ? "不计收支" : inOut;
+  flow.industryType = String(typeConvert(cell(row, indexMap, "交易类型")));
   flow.payType = "微信";
-  flow.money = parseFloat(row[indexMap["金额(元)"]].replace("¥", ""));
-  flow.name = String(row[indexMap["商品"]]);
-  flow.description =
-    row[indexMap["交易对方"]] +
-    "-" +
-    row[indexMap["支付方式"]] +
-    "-" +
-    row[indexMap["备注"]];
+  // 新版微信 xlsx 金额是数字，旧版 csv 是 "¥12.34" 字符串，统一解析
+  flow.money = parseMoney(row[indexMap["金额(元)"]]);
+  // 「商品」为 "/"（如红包/转账）时用交易对方作为名称，避免流水名称全是斜杠
+  const goods = cell(row, indexMap, "商品");
+  const counterparty = cell(row, indexMap, "交易对方");
+  flow.name = goods && goods !== "/" ? goods : counterparty;
+  flow.description = [
+    counterparty,
+    cell(row, indexMap, "支付方式"),
+    cell(row, indexMap, "备注"),
+  ]
+    .filter((s) => s && s !== "/")
+    .join("-");
   return flow;
 }
 

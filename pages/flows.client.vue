@@ -656,14 +656,13 @@ const openCsvImport = (type: string) => {
     return;
   }
   fileType.value = type;
+  // 表头行在解析时按「交易时间」列自动探测（各家账单版式经常变动），
+  // 这里只设置探测失败时的兜底行号
   if (fileType.value === "alipay") {
-    // 支付宝表头行是第25行，索引是24
     titleRowIndex.value = 24;
   } else if (fileType.value === "wxpay") {
-    // 微信表头行是第17行，索引是16
-    titleRowIndex.value = 16;
+    titleRowIndex.value = 17;
   } else if (fileType.value === "jdFinance") {
-    // 京东金融表头行是第22行，索引是21
     titleRowIndex.value = 21;
   }
   importDrawer.value = false;
@@ -728,14 +727,24 @@ const readCsvInfo = (event: Event) => {
       /**************************************/
       // 表头数据
       /**************************************/
+      // 自动探测表头行：找到包含「交易时间」列的行（微信/支付宝/京东账单版式经常变，行号不可靠）
+      const detectedIndex = sheetData.findIndex(
+        (r: any[]) =>
+          Array.isArray(r) &&
+          r.some((c) => typeof c === "string" && c.trim() === "交易时间")
+      );
+      if (detectedIndex >= 0) {
+        titleRowIndex.value = detectedIndex;
+      }
       // 表头索引集合，key-表头值，value-表头索引
       const headerData = sheetData[titleRowIndex.value];
       for (let i = 0; i < headerData.length; i++) {
-        if (!headerData[i] || headerData[i].trim() === "") {
+        const header = String(headerData[i] ?? "").trim();
+        if (header === "") {
           // 表头为空，跳过该列
           continue;
         }
-        csvHeaders.value[headerData[i]] = i;
+        csvHeaders.value[header] = i;
       }
       // 删除表头及以上行数据，只保留流水数据
       sheetData.splice(0, titleRowIndex.value + 1);
@@ -745,34 +754,43 @@ const readCsvInfo = (event: Event) => {
       /**************************************/
       // 时间列的索引
       const timeIndex = csvHeaders.value["交易时间"];
+      // 交易状态列（支付宝叫「交易状态」）：交易关闭的记录没有实际资金变动，跳过
+      const statusIndex = csvHeaders.value["交易状态"];
       sheetData.forEach((row) => {
-        // 部分数据字段格式化，并回显
+        if (!Array.isArray(row)) return;
+        // 统一清理字符串字段的首尾空白/制表符（新版支付宝账单订单号等字段带尾部 \t）
         for (let i = 0; i < row.length; i++) {
-          let cellValue = row[i];
-          // 日期字段特殊处理，将日期数字转换为 JavaScript 日期对象
+          if (typeof row[i] === "string") {
+            row[i] = row[i].trim();
+          }
+        }
+        // 跳过空行（交易时间为空）
+        if (row[timeIndex] === undefined || row[timeIndex] === "") return;
+        // 跳过已关闭的交易（支付宝新版账单会导出未成交记录）
+        if (
+          statusIndex !== undefined &&
+          String(row[statusIndex]) === "交易关闭"
+        ) {
+          return;
+        }
+        // 部分数据字段格式化，并回显
+        {
+          let cellValue = row[timeIndex];
+          // 日期字段特殊处理，将日期数字转换为日期字符串
           // 目前京东/支付宝/微信可以统一处理
-          if (i === timeIndex) {
-            if (typeof cellValue === "number" && cellValue > 0) {
-              // Excel 中日期从1899年12月30日开始
-              const excelStartDate = new Date(1899, 11, 30);
-              const resultDate = new Date(excelStartDate);
-              resultDate.setDate(resultDate.getDate() + cellValue);
-              // 添加时区偏移（假设是+8小时）
-              resultDate.setHours(resultDate.getHours() + 8);
-              // 简单的日期转字符串
-              cellValue = resultDate.toISOString().split("T")[0];
-              // 将格式化后的字符串重新赋值会sheetData，后续存储需要使用格式化后的的数据
-              row[i] = cellValue;
-            } else {
-              // 每年1月1日解析后不是数字，因此不需要特殊处理，直接当作日期处理即可
-              // 已知只有支付宝1月1日会报错。其他的还不知道
-              const resultDate = new Date(cellValue);
-              // 添加时区偏移（假设是+8小时）
-              resultDate.setHours(resultDate.getHours() + 8);
-              cellValue = resultDate.toISOString().split("T")[0];
-              // 将格式化后的字符串重新赋值会sheetData，后续存储需要使用格式化后的的数据
-              row[i] = cellValue;
-            }
+          if (typeof cellValue === "number" && cellValue > 0) {
+            // Excel 序列日期从1899年12月30日开始；新版微信 xlsx 带小数（时间部分），需取整
+            const excelStartDate = new Date(1899, 11, 30);
+            const resultDate = new Date(excelStartDate);
+            resultDate.setDate(resultDate.getDate() + Math.floor(cellValue));
+            // 添加时区偏移，防止 toISOString 转 UTC 时日期回退一天
+            resultDate.setHours(resultDate.getHours() + 8);
+            row[timeIndex] = resultDate.toISOString().split("T")[0];
+          } else {
+            const resultDate = new Date(cellValue);
+            // 添加时区偏移，防止 toISOString 转 UTC 时日期回退一天
+            resultDate.setHours(resultDate.getHours() + 8);
+            row[timeIndex] = resultDate.toISOString().split("T")[0];
           }
         }
         // 一行数据作为一个记录，csvDatas中每一个记录代表一个流水
