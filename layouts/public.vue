@@ -172,7 +172,7 @@ const checkVersion = () => {
       :class="{ 'pb-12': isMobile }"
     >
       <!-- Sidebar - Desktop -->
-      <div v-if="!isMobile" class="w-64 flex-shrink-0 h-full overflow-y-auto">
+      <div v-if="!isMobile" class="w-44 flex-shrink-0 h-full overflow-y-auto">
         <LayoutAppSidebar
           :is-open="true"
           :is-mobile="false"

@@ -122,7 +122,8 @@ const handleNavigate = (menu: Menu) => {
   <!-- Sidebar -->
   <aside
     :class="[
-      'fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-[#101513] border-r border-black/5 dark:border-white/[0.06] transform transition-transform duration-200 ease-in-out',
+      'fixed inset-y-0 left-0 z-50 bg-white dark:bg-[#101513] border-r border-black/5 dark:border-white/[0.06] transform transition-transform duration-200 ease-in-out',
+      isMobile ? 'w-64' : 'w-44',
       isMobile
         ? isOpen
           ? 'translate-x-0'
