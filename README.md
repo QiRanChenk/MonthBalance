@@ -36,6 +36,8 @@
 
 ## 部署（Docker）
 
+官方镜像 [`ghcr.io/qiranchenk/monthbalance`](https://github.com/users/QiRanChenk/packages/container/package/monthbalance)（amd64 / arm64，push 自动构建）：
+
 ```bash
 docker run -d --name monthbalance --restart always \
   -p 9090:9090 \
@@ -44,10 +46,10 @@ docker run -d --name monthbalance --restart always \
   -e NUXT_AUTH_SECRET="改成你自己的密钥" \
   -e NUXT_ADMIN_USERNAME="admin" \
   -e NUXT_ADMIN_PASSWORD="<sha256 后的密码，部署后访问 /admin/GetPassword 生成>" \
-  monthbalance:latest
+  ghcr.io/qiranchenk/monthbalance:latest
 ```
 
-镜像构建（在仓库根目录，arm64/amd64 皆可，取决于构建机）：
+也可自行构建（在仓库根目录，arm64/amd64 皆可，取决于构建机）：
 
 ```bash
 docker build -t monthbalance:latest .
