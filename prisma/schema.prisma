@@ -29,6 +29,8 @@ model User {
   password   String
   name       String?
   email      String?
+  oidcSub    String?  @unique // 统一登录（Casdoor）绑定的账号 sub
+  oidcName   String? // 绑定的统一账号显示名
   createDate DateTime @default(now())
 }
 

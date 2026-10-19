@@ -105,6 +105,23 @@ const lookLoginPS = ref(false);
 const lookRegisterPS = ref(false);
 const lookRegisterAPS = ref(false);
 
+// 统一登录（Casdoor）
+const OIDC_ERRORS: Record<string, string> = {
+  failed: "统一登录失败，请重试或用密码登录",
+  expired: "登录已过期或被打断，请重试",
+  no_account: "这个统一账号没有对应的记账账号，请联系管理员",
+  unverified: "统一账号的邮箱未验证，不能自动对应账号",
+  admin_link: "管理员账号请先用密码登录，再在右上角菜单「绑定统一账号」",
+  disabled: "账号已停用",
+  conflict: "这个账号已绑定了另一个统一账号",
+  not_configured: "统一登录尚未配置",
+};
+const oidcEnabled = ref(false);
+const oidcLogin = () => {
+  const next = typeof fromUrl.value === "string" && fromUrl.value.startsWith("/") ? fromUrl.value : "/";
+  window.location.href = `/api/oidc/login?next=${encodeURIComponent(next)}`;
+};
+
 const fromUrl = ref();
 onMounted(async () => {
   const route = useRoute();
@@ -113,6 +130,15 @@ onMounted(async () => {
   if (loginUrl != callbackUrl) {
     fromUrl.value = callbackUrl;
   }
+  const oidcError = route.query.oidc_error;
+  if (typeof oidcError === "string") {
+    Alert.error(OIDC_ERRORS[oidcError] || OIDC_ERRORS.failed);
+    navigateTo({ path: "/login", query: {} }, { replace: true });
+  }
+  doApi
+    .get<{ enabled: boolean }>("api/oidc/status")
+    .then((r) => (oidcEnabled.value = Boolean(r?.enabled)))
+    .catch(() => {});
 
   // 校验登录
   if (checkSignIn()) {
@@ -377,6 +403,22 @@ const toAdmin = () => {
                 class="w-full bg-green-600 hover:bg-green-700 text-white font-bold mt-4 py-2 sm:py-3 px-4 rounded-lg transition-colors duration-200 focus:outline-none"
               >
                 登录
+              </button>
+            </div>
+
+            <!-- 统一登录 -->
+            <div v-if="oidcEnabled">
+              <button
+                type="button"
+                @click="oidcLogin"
+                :class="[
+                  'w-full font-medium py-2 sm:py-3 px-4 rounded-lg border transition-colors duration-200 focus:outline-none',
+                  isDark
+                    ? 'border-green-500/60 text-green-400 hover:bg-green-500/10'
+                    : 'border-green-600 text-green-700 hover:bg-green-50',
+                ]"
+              >
+                用统一账号登录
               </button>
             </div>
 

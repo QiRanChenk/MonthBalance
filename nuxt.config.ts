@@ -104,6 +104,14 @@ export default defineNuxtConfig({
     authSecret: "",
     adminUsername: "",
     adminPassword: "",
+    // 统一登录（Casdoor OIDC），环境变量 NUXT_OIDC_*；Client ID + Secret 都填了才启用
+    oidcIssuer: "https://auth.mmkj.site", // NUXT_OIDC_ISSUER：公网 issuer（发现文档、JWKS 只从这里取）
+    oidcClientId: "", // NUXT_OIDC_CLIENT_ID
+    oidcClientSecret: "", // NUXT_OIDC_CLIENT_SECRET
+    oidcInternalUrl: "", // NUXT_OIDC_INTERNAL_URL：可选，只用于换令牌和 userinfo，如 http://192.168.123.227:8001
+    oidcRedirectOrigins: "", // NUXT_OIDC_REDIRECT_ORIGINS：允许的站点地址（空格 / 逗号分隔），默认见 server/utils/oidcAuth.ts
+    oidcAutoCreate: "", // NUXT_OIDC_AUTO_CREATE=1：没有对应账号时自动建普通用户（默认不建）
+    oidcTrustProxy: "", // NUXT_OIDC_TRUST_PROXY=1：信任 X-Forwarded-Proto / X-Forwarded-Host
   },
 
   modules: [

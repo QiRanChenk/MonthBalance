@@ -18,8 +18,10 @@
  */
 export default defineEventHandler(async (event) => {
   // const Authorization = getHeader(event, "Admin");
+  // 统一登录签发的令牌：前端随后跳 /api/oidc/logout 退出 Casdoor（单点退出）
+  const sso = oidcTokenVia(event) === "oidc" && Boolean(oidcConfig());
 
   deleteCookie(event, "Authorization");
 
-  return success("退出成功");
+  return success(sso ? { sso: true } : "退出成功");
 });

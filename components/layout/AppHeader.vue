@@ -27,6 +27,33 @@ const emit = defineEmits<{
 }>();
 
 const showUserMenu = ref(false);
+
+// 统一登录（Casdoor）绑定
+const oidc = ref<{ enabled: boolean; linked: boolean; name: string | null } | null>(null);
+const loadOidc = () =>
+  doApi
+    .get<{ enabled: boolean; linked: boolean; name: string | null }>("api/oidc/link")
+    .then((r) => (oidc.value = r))
+    .catch(() => {});
+onMounted(loadOidc);
+const oidcBind = () => {
+  window.location.href = "/api/oidc/login?mode=link";
+};
+const oidcUnbind = () => {
+  showUserMenu.value = false;
+  Confirm.open({
+    title: "解除统一账号绑定",
+    content: `解除后不能再用统一账号（${oidc.value?.name || ""}）登录这个账号，密码登录不受影响。确定？`,
+    confirmText: "解除绑定",
+    cancelText: "取消",
+    confirm: () => {
+      doApi.post("api/oidc/unlink", {}).then(() => {
+        Alert.success("已解除绑定");
+        loadOidc();
+      });
+    },
+  });
+};
 </script>
 
 <template>
@@ -117,6 +144,21 @@ const showUserMenu = ref(false);
                     class="w-full px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                   >
                     修改密码
+                  </button>
+                  <button
+                    v-if="oidc?.enabled && !oidc.linked"
+                    @click="oidcBind"
+                    class="w-full px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    绑定统一账号
+                  </button>
+                  <button
+                    v-if="oidc?.linked"
+                    @click="oidcUnbind"
+                    :title="oidc.name || ''"
+                    class="w-full px-4 py-2 text-left text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    解除统一账号绑定
                   </button>
                   <hr class="my-1 border-gray-200 dark:border-gray-600" />
                   <button

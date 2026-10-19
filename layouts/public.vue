@@ -58,6 +58,20 @@ onMounted(() => {
     showBookDialogFlag.value.visible = true;
   }
 
+  // 「绑定统一账号」回来的结果
+  const oidcLink = route.query.oidc_link;
+  if (typeof oidcLink === "string") {
+    const msg: Record<string, string> = {
+      ok: "已绑定统一账号",
+      conflict: "绑定失败：这个统一账号已绑定了别的账号，或当前账号已绑定了另一个统一账号",
+      expired: "绑定已过期或登录状态变了，请重试",
+      not_configured: "统一登录尚未配置",
+    };
+    if (oidcLink === "ok") Alert.success(msg.ok);
+    else Alert.error(msg[oidcLink] || "绑定统一账号失败，请重试");
+    navigateTo({ path: route.path, query: {} }, { replace: true });
+  }
+
   // 只有当 GlobalUserInfo 不存在时才调用 getUserInfo
   if (!GlobalUserInfo.value) {
     getUserInfo();
@@ -78,7 +92,12 @@ const logout = () => {
   pageLoading.value = true;
   localStorage.removeItem("bookId");
   localStorage.removeItem("bookName");
-  doApi.get("api/logout").then(() => {
+  doApi.get<any>("api/logout").then((res) => {
+    if (res && res.sso) {
+      // 统一登录进来的：顺带退出 Casdoor（单点退出），再回登录页
+      window.location.href = "/api/oidc/logout";
+      return;
+    }
     Alert.success("退出登录");
     setTimeout(() => {
       navigateTo("/login");
