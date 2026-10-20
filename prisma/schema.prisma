@@ -22,6 +22,14 @@ model SystemSetting {
   updateBy     DateTime @default(now())
 }
 
+// 后台管理员（NUXT_ADMIN_USERNAME，不在 User 表里）绑定的统一登录账号：最多一行（id = 1）
+model AdminOidcLink {
+  id         Int      @id @default(1)
+  sub        String // Casdoor sub
+  name       String? // 显示名
+  createDate DateTime @default(now())
+}
+
 // 用户表
 model User {
   id         Int      @id @default(autoincrement())

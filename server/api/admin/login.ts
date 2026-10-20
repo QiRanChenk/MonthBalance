@@ -45,6 +45,7 @@ export default defineEventHandler(async (event) => {
     // 二次加密用作token，TODO 可以优化为使用JWT生成
     const adminToken = encryptBySHA256(account, adminpass);
 
+    deleteCookie(event, ADMIN_VIA_COOKIE, { path: "/api/admin" }); // 密码登录：退出时不跳 Casdoor
     setCookie(event, "Admin", adminToken, {
       maxAge: 7 * 24 * 60 * 60,
     });

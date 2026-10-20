@@ -3,15 +3,22 @@ import jwt from "jsonwebtoken";
 import prisma from "~/lib/prisma";
 import { encryptBySHA256 } from "./common";
 import {
+  authorizeUrl,
+  discover,
   linkCheck,
   OidcError,
   pickOrigin,
   randomToken,
   resolveLocalUser,
+  safeNext,
+  sealPending,
+  type FlowMode,
   type Identity,
   type OidcConfig,
   type OidcErrorCode,
+  type Pending,
 } from "~/lib/oidc";
+import { failPath } from "~/lib/oidcFlow";
 
 /**
  * 统一登录（Casdoor OIDC）的服务端帮手：配置、站点地址、JWT、本地账号对应。协议部分在 lib/oidc.ts。
@@ -23,6 +30,12 @@ import {
  *   GET  /api/oidc/logout            本地退出后（/api/logout 返回 sso: true）跳 Casdoor 退出，再回 /login
  *   GET  /api/oidc/link              （已登录）{ enabled, linked, name }
  *   POST /api/oidc/unlink            （已登录）解除绑定
+ * 后台（管理员 NUXT_ADMIN_USERNAME，不在 User 表；绑定存在 AdminOidcLink 表）：
+ *   GET  /api/oidc/admin/login            /admin/login 的「用统一账号登录」：只认已绑定的 sub，成功 = 和密码登录一样的 Admin Cookie
+ *   GET  /api/oidc/admin/login?mode=link  （已有后台会话）「绑定统一账号」
+ *   GET  /api/oidc/admin/logout           后台退出后（/api/admin/logout 返回 sso: true）退出 Casdoor，再回 /admin/login
+ *   GET  /api/admin/entry/oidc/status、POST /api/admin/entry/oidc/unlink（后台会话，Admin 请求头）
+ * 前后台共用一个回调；模式在签名 Cookie 里，前台流程永远拿不到后台会话，反之亦然（lib/oidcFlow.ts）。
  *
  * 账号对应（lib/oidc.ts resolveLocalUser）：先按已绑定的 sub；否则只有 IdP 说 email_verified 时，按邮箱 / 用户名找
  * 未绑定、非管理员的账号并绑定；用户名等于 NUXT_ADMIN_USERNAME 的账号算管理员，从不按邮箱自动绑定，要先用密码登录
@@ -107,10 +120,86 @@ export function oidcIssueToken(event: any, user: { id: number; username: string;
 }
 
 /** 详情写日志，浏览器只拿到固定代码。 */
-export function oidcFail(event: any, code: OidcErrorCode, detail: string, mode: "login" | "link" = "login") {
+export function oidcFail(event: any, code: OidcErrorCode, detail: string, mode: FlowMode = "login") {
   console.warn(`[oidc] ${mode} failed (${code}): ${detail}`);
-  return sendRedirect(event, mode === "link" ? `/calendar?oidc_link=${code}` : `/login?oidc_error=${code}`, 302);
+  return sendRedirect(event, failPath(mode, code), 302);
 }
+
+const PENDING_MS = 10 * 60_000;
+
+/** 发起：写签名的待完成 Cookie（state / nonce / PKCE / 模式），跳 Casdoor。 */
+export async function oidcStart(event: any, mode: FlowMode, next: string, uid?: string) {
+  const cfg = oidcConfig();
+  if (!cfg) return oidcFail(event, "not_configured", "OIDC is not configured", mode);
+  const origin = oidcSiteOrigin(event);
+  if (!origin) return oidcFail(event, "failed", `request origin ${oidcRequestOrigin(event)} is not among the allowed site addresses`, mode);
+  try {
+    const doc = await discover(cfg);
+    const pending: Pending = {
+      ...oidcNewPendingTokens(),
+      redirectUri: origin + OIDC_CALLBACK,
+      next: safeNext(next),
+      exp: Date.now() + PENDING_MS,
+      mode,
+      ...(uid ? { uid } : {}),
+    };
+    setCookie(event, OIDC_PENDING_COOKIE, sealPending(pending, oidcPendingKey()), {
+      httpOnly: true,
+      sameSite: "lax", // Casdoor 用顶层 GET 把浏览器送回来，Lax 会带上
+      secure: origin.startsWith("https:"),
+      path: OIDC_PENDING_PATH,
+      maxAge: PENDING_MS / 1000,
+    });
+    return sendRedirect(event, authorizeUrl(doc, cfg, pending), 302);
+  } catch (e) {
+    return oidcFail(event, "failed", `discovery: ${(e as Error).message}`, mode);
+  }
+}
+
+// ---------- 后台管理员 ----------
+
+export const ADMIN_VIA_COOKIE = "AdminVia";
+const ADMIN_DAYS = 7;
+
+/** 和 /api/admin/login 一样的后台令牌；没配置管理员时为空。 */
+export function oidcAdminToken(): string {
+  const rc = useRuntimeConfig();
+  const u = String(rc.adminUsername ?? "");
+  const p = String(rc.adminPassword ?? "");
+  return u && p ? encryptBySHA256(u, p) : "";
+}
+
+/** 当前请求是否带着有效的后台会话（Admin 请求头，或浏览器直接导航时的 Admin Cookie）。 */
+export function oidcAdminSession(event: any, fromCookie = false): boolean {
+  const want = oidcAdminToken();
+  const got = String(getHeader(event, "Admin") || (fromCookie ? getCookie(event, "Admin") : "") || "");
+  return Boolean(want) && got.length === want.length && sameStringSafe(got, want);
+}
+
+function sameStringSafe(a: string, b: string) {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+/** 后台会话：和密码登录完全一样的 Admin Cookie；另记一个 HttpOnly 的 AdminVia，退出时据此顺带退出 Casdoor。 */
+export function oidcIssueAdminSession(event: any) {
+  const maxAge = ADMIN_DAYS * 24 * 60 * 60;
+  setCookie(event, "Admin", oidcAdminToken(), { maxAge, path: "/" });
+  setCookie(event, ADMIN_VIA_COOKIE, "oidc", { maxAge, path: "/api/admin", httpOnly: true, sameSite: "lax" });
+}
+
+export const oidcAdminLinkRow = () => prisma.adminOidcLink.findUnique({ where: { id: 1 } });
+
+export async function oidcSetAdminLink(i: Identity) {
+  await prisma.adminOidcLink.upsert({
+    where: { id: 1 },
+    create: { id: 1, sub: i.sub, name: oidcIdName(i) },
+    update: { sub: i.sub, name: oidcIdName(i) },
+  });
+}
+
+export const oidcClearAdminLink = () => prisma.adminOidcLink.deleteMany({ where: { id: 1 } });
 
 // ---------- 本地账号 ----------
 

@@ -25,7 +25,7 @@ export type Discovery = {
 export type Identity = { sub: string; email: string; emailVerified: boolean; name: string; username: string };
 
 /** `code` is what the browser gets to see (a fixed set); `message` (details) only goes to the server log. */
-export type OidcErrorCode = 'failed' | 'expired' | 'no_account' | 'unverified' | 'admin_link' | 'disabled' | 'conflict' | 'not_configured';
+export type OidcErrorCode = 'failed' | 'expired' | 'no_account' | 'unverified' | 'admin_link' | 'disabled' | 'conflict' | 'not_configured' | 'not_allowed';
 export class OidcError extends Error {
   constructor(
     readonly code: OidcErrorCode,
@@ -93,7 +93,9 @@ export const pkceChallenge = (verifier: string) => createHash('sha256').update(v
 // ---------- the pending-login cookie (state, nonce, PKCE verifier), HMAC-signed ----------
 
 /** mode 'link': 「绑定统一账号」 for the signed-in account `uid` instead of signing in. */
-export type Pending = { state: string; nonce: string; verifier: string; redirectUri: string; next: string; exp: number; mode?: 'login' | 'link'; uid?: string };
+export type Pending = { state: string; nonce: string; verifier: string; redirectUri: string; next: string; exp: number; mode?: FlowMode; uid?: string };
+/** 前台（用户）与后台（管理员）各有登录 / 绑定两种；模式在签名 Cookie 里，回调只按它分流。 */
+export type FlowMode = 'login' | 'link' | 'admin-login' | 'admin-link';
 
 export function sealPending(p: Pending, key: Buffer): string {
   const body = Buffer.from(JSON.stringify(p)).toString('base64url');

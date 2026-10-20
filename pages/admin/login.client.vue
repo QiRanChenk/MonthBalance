@@ -132,6 +132,15 @@
               登录中...
             </span>
           </button>
+
+          <!-- 统一登录：只认后台已绑定的统一账号 -->
+          <a
+            v-if="oidcEnabled"
+            href="/api/oidc/admin/login"
+            class="block mt-3 w-full text-center font-medium py-2 sm:py-3 px-4 rounded-lg border border-blue-500 text-blue-400 hover:bg-blue-500/10 transition-colors"
+          >
+            用统一账号登录
+          </a>
         </form>
       </div>
     </div>
@@ -207,6 +216,27 @@ const toHome = () => {
 const toGithub = () => {
   window.open('https://github.com/dingdangdog/cashbook', '_blank');
 };
+
+// 统一登录（Casdoor）
+const OIDC_ERRORS: Record<string, string> = {
+  not_allowed: "这个统一账号没有绑定后台管理员（请先用密码登录，再在后台「绑定统一账号」）",
+  expired: "登录已过期或被打断，请重试",
+  not_configured: "统一登录尚未配置",
+  failed: "统一登录失败，请重试或用密码登录",
+};
+const oidcEnabled = ref(false);
+onMounted(() => {
+  const route = useRoute();
+  const err = route.query.oidc_error;
+  if (typeof err === "string") {
+    Alert.error(OIDC_ERRORS[err] || OIDC_ERRORS.failed);
+    navigateTo({ path: "/admin/login", query: {} }, { replace: true });
+  }
+  doApi
+    .get<{ enabled: boolean }>("api/oidc/status")
+    .then((r) => (oidcEnabled.value = Boolean(r?.enabled)))
+    .catch(() => {});
+});
 
 // 如果已登录则跳转到管理后台
 if (useCookie("Admin").value) {

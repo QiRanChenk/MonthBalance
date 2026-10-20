@@ -1,10 +1,52 @@
 <script setup lang="ts">
 const logout = () => {
-  doApi.get("api/admin/logout").then(() => {
+  doApi.get<any>("api/admin/logout").then((res) => {
+    if (res && res.sso) {
+      // 统一登录进来的后台会话：顺带退出 Casdoor（单点退出），再回 /admin/login
+      window.location.href = "/api/oidc/admin/logout";
+      return;
+    }
     Alert.success("Logout success");
     navigateTo("/admin/login");
   });
 };
+
+// 统一登录（Casdoor）：后台管理员绑定
+const oidc = ref<{ enabled: boolean; linked: boolean; name: string | null } | null>(null);
+const loadOidc = () =>
+  doApi
+    .get<{ enabled: boolean; linked: boolean; name: string | null }>("api/admin/entry/oidc/status")
+    .then((r) => (oidc.value = r))
+    .catch(() => {});
+const oidcBind = () => {
+  window.location.href = "/api/oidc/admin/login?mode=link";
+};
+const oidcUnbind = () => {
+  Confirm.open({
+    title: "解除统一账号绑定",
+    content: `解除后不能再用统一账号（${oidc.value?.name || ""}）登录后台，密码登录不受影响。确定？`,
+    confirmText: "解除绑定",
+    cancelText: "取消",
+    confirm: () => {
+      doApi.post("api/admin/entry/oidc/unlink", {}).then(() => {
+        Alert.success("已解除绑定");
+        loadOidc();
+      });
+    },
+  });
+};
+onMounted(() => {
+  loadOidc();
+  const route = useRoute();
+  const r = route.query.oidc_link;
+  if (typeof r === "string") {
+    if (r === "ok") Alert.success("已绑定统一账号，之后可在后台登录页「用统一账号登录」");
+    else if (r === "conflict") Alert.error("绑定失败：后台已绑定了另一个统一账号，请先解除绑定");
+    else if (r === "expired") Alert.error("绑定已过期或后台登录状态变了，请重试");
+    else Alert.error("绑定统一账号失败，请重试");
+    navigateTo({ path: route.path, query: {} }, { replace: true });
+  }
+});
 
 const miniWindow = ref(false);
 const menuer = ref(false);
@@ -138,7 +180,23 @@ const getIconComponent = (iconName: string) => {
           </button>
         </div>
 
-        <!-- 右侧：退出登录 -->
+        <!-- 右侧：统一账号绑定 + 退出登录 -->
+        <div class="flex items-center space-x-2">
+        <button
+          v-if="oidc?.enabled && !oidc.linked"
+          @click="oidcBind"
+          class="px-3 py-2 border border-blue-500 text-blue-300 hover:bg-blue-500/10 rounded-lg transition-colors text-sm"
+        >
+          绑定统一账号
+        </button>
+        <button
+          v-if="oidc?.linked"
+          @click="oidcUnbind"
+          :title="oidc.name || ''"
+          class="px-3 py-2 border border-gray-500 text-gray-300 hover:bg-gray-500/10 rounded-lg transition-colors text-sm"
+        >
+          解除绑定
+        </button>
         <button
           @click="logout"
           class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center space-x-2"
@@ -158,6 +216,7 @@ const getIconComponent = (iconName: string) => {
           </svg>
           <span>退出登录</span>
         </button>
+        </div>
       </div>
     </header>
 

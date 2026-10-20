@@ -19,7 +19,10 @@
 export default defineEventHandler(async (event) => {
   // const Authorization = getHeader(event, "Admin");
 
+  // 统一登录进来的后台会话：前端随后跳 /api/oidc/admin/logout 退出 Casdoor（单点退出）
+  const sso = getCookie(event, ADMIN_VIA_COOKIE) === "oidc" && Boolean(oidcConfig());
   deleteCookie(event, "Admin");
+  deleteCookie(event, ADMIN_VIA_COOKIE, { path: "/api/admin" });
 
-  return success("退出成功");
+  return success(sso ? { sso: true } : "退出成功");
 });
